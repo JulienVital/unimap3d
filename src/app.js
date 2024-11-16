@@ -1,4 +1,7 @@
 import maplibregl from 'maplibre-gl';
+import * as dat from "lil-gui";
+import outlineVertexShader from "./shaders/outline/vertex.glsl";
+import outlineFragmentShader from "./shaders/outline/fragment.glsl";
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { zoneCoordinates } from './zone';
 import * as THREE from 'three';
@@ -6,15 +9,15 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const MAPTILER_KEY = 'HSEn1GJ1lpRklVKZ4CyJ';
 const map = new maplibregl.Map({
     style: `https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=HSEn1GJ1lpRklVKZ4CyJ`,
-    center: [-0.364738, 49.191056],
-    zoom: 15.5,
+    center: [-0.361538, 49.191356],
+    zoom: 21,
     container: 'map',
     antialias: true,
     minZoom: 5,
     maxPitch: 85,
-    pitch:85
+    pitch:0
 });
-
+const gui = new dat.GUI();
 // The 'building' layer in the streets vector source contains building-height data from OpenStreetMap.
 map.on('load', () => {
     map.setSky({
@@ -23,7 +26,7 @@ map.on('load', () => {
         "horizon-color": "#FFFFFF",
         "horizon-fog-blend": 1,
         "fog-color": "#FFFFFF",
-        "fog-ground-blend": 0.5,
+        "fog-ground-blend": 0,
 
     });
     map.addSource('zone-geojson', {
@@ -43,11 +46,13 @@ map.on('load', () => {
         }
     });
 
-    map.addSource('hillshadeSource', {
-        type: 'raster-dem',
-        url: 'https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=HSEn1GJ1lpRklVKZ4CyJ',
-        tileSize: 256
+    map.addSource("terrainSource", {
+        type: "raster-dem",
+        url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${MAPTILER_KEY}`,
+        tileSize: 256,
     });
+    
+    map.setTerrain({ source: "terrainSource", exaggeration: 0 });
     // Ajouter la couche "fill" pour dessiner la zone avec un contour
     map.addLayer({
         id: 'zone-fill',
@@ -57,7 +62,6 @@ map.on('load', () => {
             'fill-color': '#FF573340', // Couleur du remplissage de la zone
             'fill-opacity': 0.4 // Opacité
         },
-                
         maxzoom: 15, 
         minzoom: 12, 
                  // La couche sera visible uniquement à partir du niveau de zoom 12
@@ -109,7 +113,6 @@ map.on('load', () => {
         }
     });
     map.addLayer(customLayer)
-    map.setTerrain({ source: 'hillshadeSource' })
 });
 
 
@@ -118,41 +121,81 @@ const customLayer = {
     type: 'custom',
     renderingMode: '3d',
     maxzoom: 17,
-    onAdd (map, gl) {
-        
+    onAdd(map, gl) {
         this.camera = new THREE.Camera();
         this.scene = new THREE.Scene();
-        
-        // create two three.js lights to illuminate the model
-        const directionalLight = new THREE.DirectionalLight(0xffffff);
-        directionalLight.position.set(0, -70, 100).normalize();
+
+        // Lumière
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(5, 5, 5);
         this.scene.add(directionalLight);
-        
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff);
-        directionalLight2.position.set(0, 70, 100).normalize();
-        this.scene.add(directionalLight2);
-        
-        // use the three.js GLTF loader to add the 3D model to the three.js scene
+
+        // Matériau de contour
+        this.outlineMaterial = new THREE.ShaderMaterial({
+            vertexShader: outlineVertexShader,
+            fragmentShader: outlineFragmentShader,
+            uniforms: {
+                lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
+                color: { value: new THREE.Color("black") },
+                outlineThickness: { value: 0.03 }, // Valeur initiale
+            },
+            side: THREE.BackSide,
+        });
+
+        // Matériau principal
+        const material = new THREE.MeshToonMaterial();
+        material.color.set(0xebebc6);
+
+        // Charger le modèle GLTF
         const loader = new GLTFLoader();
         loader.load(
-            'https://docs.mapbox.com/mapbox-gl-js/assets/metlife-building.gltf',
+            'test.glb',
             (gltf) => {
+                gltf.scene.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = material;
+                        // Créer un mesh de contour
+                        const outlineMesh = new THREE.Mesh(child.geometry, this.outlineMaterial);
+                        outlineMesh.position.copy(child.position);
+                        outlineMesh.rotation.copy(child.rotation);
+                        outlineMesh.scale.copy(child.scale);
+                        outlineMesh.scale.multiplyScalar(1.0); // Ajustement initial
+                        child.parent.add(outlineMesh);
+                        
+                        if(child.userData.name ==="Bâtiment L"){
 
+                            const edgesGeometry = new THREE.EdgesGeometry(child.geometry); // Géométrie des arêtes
+                            const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 }); // Matériau des arêtes
+                            const edgesMesh = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+                            edgesMesh.position.copy(child.position);
+                            edgesMesh.rotation.copy(child.rotation);
+                            edgesMesh.scale.copy(child.scale);
+                            child.parent.add(edgesMesh);
+                        }
+                    }
+                });
                 this.scene.add(gltf.scene);
             }
         );
-        this.map = map;
 
-        // use the MapLibre GL JS map canvas for three.js
+        // Initialiser MapLibre et THREE.js
+        this.map = map;
         this.renderer = new THREE.WebGLRenderer({
             canvas: map.getCanvas(),
             context: gl,
             antialias: true
         });
-
         this.renderer.autoClear = false;
+
+        // Écouter le zoom pour ajuster l'épaisseur
+        this.map.on('zoom', () => {
+            const zoom = this.map.getZoom();
+            const newThickness = 0.01 + (zoom - 10) * 0.005; // Calculer l'épaisseur en fonction du zoom
+            this.outlineMaterial.uniforms.outlineThickness.value = Math.max(0.01, newThickness); // Limiter à 0.01 minimum
+            this.map.triggerRepaint(); // Repeindre la scène
+        });
     },
-    render (gl, matrix) {
+    render(gl, matrix) {
         const rotationX = new THREE.Matrix4().makeRotationAxis(
             new THREE.Vector3(1, 0, 0),
             modelTransform.rotateX
@@ -191,7 +234,8 @@ const customLayer = {
     }
 };
 
-const modelOrigin = [-0.364738, 49.191056]
+
+const modelOrigin = [-0.364019, 49.192190]
 const modelAltitude = 0;
 const modelRotate = [Math.PI / 2, 0, 0];
 
