@@ -7,17 +7,40 @@ import { zoneCoordinates } from './zone';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const MAPTILER_KEY = 'HSEn1GJ1lpRklVKZ4CyJ';
+
+const mapObject =  {
+    zoom : 19,
+    pitch : 75,
+    bearing: 44,
+    outLine : "#37a136",
+}
 const map = new maplibregl.Map({
     style: `https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=HSEn1GJ1lpRklVKZ4CyJ`,
     center: [-0.361538, 49.191356],
-    zoom: 21,
+    zoom: mapObject.zoom,
     container: 'map',
     antialias: true,
     minZoom: 5,
     maxPitch: 85,
-    pitch:0
+    bearing: mapObject.bearing,
+    pitch:mapObject.pitch,
 });
 const gui = new dat.GUI();
+gui.add(mapObject, "zoom").min(5).max(25).name("zoom").onChange(
+    function(){
+        map.setZoom(mapObject.zoom)
+    }
+ )
+ gui.add(mapObject, "pitch").min(0).max(85).name("pitch").onChange(
+    function(){
+        map.setPitch(mapObject.pitch)
+    }
+ )
+ gui.add(mapObject, "bearing").name("bearing").min(0).max(360).onChange(
+    function(){
+        map.setBearing(mapObject.bearing)
+    }
+ )
 // The 'building' layer in the streets vector source contains building-height data from OpenStreetMap.
 map.on('load', () => {
     map.setSky({
@@ -115,7 +138,31 @@ map.on('load', () => {
     map.addLayer(customLayer)
 });
 
+const outlineMaterial = new THREE.ShaderMaterial({
+    vertexShader: outlineVertexShader,
+    fragmentShader: outlineFragmentShader,
+    uniforms: {
+        lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
+        color: { value: new THREE.Color("black") },
+        outlineThickness: { value: 0.03 }, // Valeur initiale
+    },
+    side: THREE.BackSide,
+});
+const color = new THREE.Color(mapObject.outLine) 
 
+const outlineMaterial2 = new THREE.ShaderMaterial({
+    vertexShader: outlineVertexShader,
+    fragmentShader: outlineFragmentShader,
+    uniforms: {
+        lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
+        color: { value: color },
+        outlineThickness: { value: 0.03 }, // Valeur initiale
+    },
+    side: THREE.BackSide,
+});
+gui.addColor(mapObject, "outLine").name("outline").onChange((value) => {
+    outlineMaterial2.uniforms.color.value.set(value);
+});
 const customLayer = {
     id: '3d-model',
     type: 'custom',
@@ -131,20 +178,26 @@ const customLayer = {
         this.scene.add(directionalLight);
 
         // Matériau de contour
-        this.outlineMaterial = new THREE.ShaderMaterial({
-            vertexShader: outlineVertexShader,
-            fragmentShader: outlineFragmentShader,
-            uniforms: {
-                lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
-                color: { value: new THREE.Color("black") },
-                outlineThickness: { value: 0.03 }, // Valeur initiale
-            },
-            side: THREE.BackSide,
-        });
+      
 
         // Matériau principal
-        const material = new THREE.MeshToonMaterial();
-        material.color.set(0xebebc6);
+        const guiParams = {
+            edgeColor: "#757575", // Couleur initiale des arêtes en hexadécimal
+            face: "#FcFFC1", // Couleur initiale des arêtes en hexadécimal
+            face2: "#c2ffdf", // Couleur initiale des arêtes en hexadécimal
+        };
+        const material = new THREE.MeshToonMaterial({color : guiParams.face});
+        const material2 = new THREE.MeshToonMaterial({color : guiParams.face2});
+        gui.addColor(guiParams, "edgeColor").name("Arête Color").onChange((value) => {
+            edgesMaterial.color.set(value); // Mettre à jour la couleur du matériau
+        });
+        gui.addColor(guiParams, "face").name("batiment").onChange((value) => {
+            material.color.set(value); // Mettre à jour la couleur du matériau
+        });
+        gui.addColor(guiParams, "face2").name("arbre").onChange((value) => {
+            material2.color.set(value); // Mettre à jour la couleur du matériau
+        });
+        const edgesMaterial = new THREE.LineBasicMaterial({ color: guiParams.edgeColor }); // Noir par défaut
 
         // Charger le modèle GLTF
         const loader = new GLTFLoader();
@@ -153,24 +206,32 @@ const customLayer = {
             (gltf) => {
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
-                        child.material = material;
                         // Créer un mesh de contour
-                        const outlineMesh = new THREE.Mesh(child.geometry, this.outlineMaterial);
-                        outlineMesh.position.copy(child.position);
-                        outlineMesh.rotation.copy(child.rotation);
-                        outlineMesh.scale.copy(child.scale);
-                        outlineMesh.scale.multiplyScalar(1.0); // Ajustement initial
-                        child.parent.add(outlineMesh);
+                 
                         
                         if(child.userData.name ==="Bâtiment L"){
+                        child.material = material;
+                            const outlineMesh = new THREE.Mesh(child.geometry, outlineMaterial);
+                            outlineMesh.position.copy(child.position);
+                            outlineMesh.rotation.copy(child.rotation);
+                            outlineMesh.scale.copy(child.scale);
+                            outlineMesh.scale.multiplyScalar(1.0); // Ajustement initial
+                            child.parent.add(outlineMesh);
 
                             const edgesGeometry = new THREE.EdgesGeometry(child.geometry); // Géométrie des arêtes
-                            const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000 }); // Matériau des arêtes
                             const edgesMesh = new THREE.LineSegments(edgesGeometry, edgesMaterial);
                             edgesMesh.position.copy(child.position);
                             edgesMesh.rotation.copy(child.rotation);
                             edgesMesh.scale.copy(child.scale);
                             child.parent.add(edgesMesh);
+                        }else{
+                        child.material = material2;
+                            const outlineMesh = new THREE.Mesh(child.geometry, outlineMaterial2);
+                            outlineMesh.position.copy(child.position);
+                            outlineMesh.rotation.copy(child.rotation);
+                            outlineMesh.scale.copy(child.scale);
+                            outlineMesh.scale.multiplyScalar(1.0); // Ajustement initial
+                            child.parent.add(outlineMesh);
                         }
                     }
                 });
@@ -189,10 +250,11 @@ const customLayer = {
 
         // Écouter le zoom pour ajuster l'épaisseur
         this.map.on('zoom', () => {
-            const zoom = this.map.getZoom();
-            const newThickness = 0.01 + (zoom - 10) * 0.005; // Calculer l'épaisseur en fonction du zoom
-            this.outlineMaterial.uniforms.outlineThickness.value = Math.max(0.01, newThickness); // Limiter à 0.01 minimum
-            this.map.triggerRepaint(); // Repeindre la scène
+            const zoom = map.getZoom();
+            const newThickness = 0.01 + (zoom - 10) * 0.005; // Ajustez selon vos besoins
+            outlineMaterial.uniforms.outlineThickness.value = Math.max(0.01, newThickness); // Limite minimale
+            outlineMaterial2.uniforms.outlineThickness.value = Math.max(0.01, newThickness);
+            map.triggerRepaint(); // Repeindre la scène
         });
     },
     render(gl, matrix) {
