@@ -13,6 +13,9 @@ const mapObject =  {
     pitch : 75,
     bearing: 44,
     outLine : "#37a136",
+    outlineSize: 0.3,
+    outlineMin: 0.3,
+    outlineMax: 0.3 ,
 }
 const map = new maplibregl.Map({
     style: `https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=HSEn1GJ1lpRklVKZ4CyJ`,
@@ -26,17 +29,21 @@ const map = new maplibregl.Map({
     pitch:mapObject.pitch,
 });
 const gui = new dat.GUI();
-gui.add(mapObject, "zoom").min(5).max(25).name("zoom").onChange(
+const guiMap = gui.addFolder( 'Carte' );
+const guiColor = gui.addFolder( 'Couleurs' );
+const guiTree = guiColor.addFolder( 'Arbres' );
+const guiBatiment = guiColor.addFolder( 'Batiments' );
+guiMap.add(mapObject, "zoom").min(5).max(25).name("zoom").onChange(
     function(){
         map.setZoom(mapObject.zoom)
     }
  )
- gui.add(mapObject, "pitch").min(0).max(85).name("pitch").onChange(
+ guiMap.add(mapObject, "pitch").min(0).max(85).name("pitch").onChange(
     function(){
         map.setPitch(mapObject.pitch)
     }
  )
- gui.add(mapObject, "bearing").name("bearing").min(0).max(360).onChange(
+ guiMap.add(mapObject, "bearing").name("bearing").min(0).max(360).onChange(
     function(){
         map.setBearing(mapObject.bearing)
     }
@@ -144,7 +151,7 @@ const outlineMaterial = new THREE.ShaderMaterial({
     uniforms: {
         lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
         color: { value: new THREE.Color("black") },
-        outlineThickness: { value: 0.03 }, // Valeur initiale
+        outlineThickness: { value: mapObject.outlineSize }, // Valeur initiale
     },
     side: THREE.BackSide,
 });
@@ -160,9 +167,7 @@ const outlineMaterial2 = new THREE.ShaderMaterial({
     },
     side: THREE.BackSide,
 });
-gui.addColor(mapObject, "outLine").name("outline").onChange((value) => {
-    outlineMaterial2.uniforms.color.value.set(value);
-});
+
 const customLayer = {
     id: '3d-model',
     type: 'custom',
@@ -173,7 +178,7 @@ const customLayer = {
         this.scene = new THREE.Scene();
 
         // Lumière
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
         directionalLight.position.set(5, 5, 5);
         this.scene.add(directionalLight);
 
@@ -188,14 +193,29 @@ const customLayer = {
         };
         const material = new THREE.MeshToonMaterial({color : guiParams.face});
         const material2 = new THREE.MeshToonMaterial({color : guiParams.face2});
-        gui.addColor(guiParams, "edgeColor").name("Arête Color").onChange((value) => {
+        
+        guiBatiment.addColor(guiParams, "edgeColor").name("Bordure").onChange((value) => {
             edgesMaterial.color.set(value); // Mettre à jour la couleur du matériau
         });
-        gui.addColor(guiParams, "face").name("batiment").onChange((value) => {
+        guiBatiment.addColor(guiParams, "face").name("Batiment").onChange((value) => {
             material.color.set(value); // Mettre à jour la couleur du matériau
         });
-        gui.addColor(guiParams, "face2").name("arbre").onChange((value) => {
+        guiBatiment.add(mapObject, "outlineMax").min(0).max(1).name("Bordure max").step(0.01).onChange(
+            (value)=>{
+                            const minThickness = mapObject.outlineMin; // Définie par l'utilisateur
+            const maxThickness = mapObject.outlineMax; // Définie par l'utilisateur
+            const zoom = map.getZoom();
+            // Interpolation linéaire entre min et max en fonction du zoom (0 -> min, 15 -> max)
+            const newThickness = minThickness + (maxThickness - minThickness) * (zoom / 15);
+                outlineMaterial.uniforms.outlineThickness.value =newThickness
+            }
+         )
+
+        guiTree.addColor(guiParams, "face2").name("Arbre").onChange((value) => {
             material2.color.set(value); // Mettre à jour la couleur du matériau
+        });
+        guiTree.addColor(mapObject, "outLine").name("Bordure").onChange((value) => {
+            outlineMaterial2.uniforms.color.value.set(value);
         });
         const edgesMaterial = new THREE.LineBasicMaterial({ color: guiParams.edgeColor }); // Noir par défaut
 
@@ -207,9 +227,9 @@ const customLayer = {
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
                         // Créer un mesh de contour
-                 
+                        console.log(child)
                         
-                        if(child.userData.name ==="Bâtiment L"){
+                        if(child.userData.type ==="batiment"){
                         child.material = material;
                             const outlineMesh = new THREE.Mesh(child.geometry, outlineMaterial);
                             outlineMesh.position.copy(child.position);
@@ -224,7 +244,12 @@ const customLayer = {
                             edgesMesh.rotation.copy(child.rotation);
                             edgesMesh.scale.copy(child.scale);
                             child.parent.add(edgesMesh);
-                        }else{
+                        }
+                        else if (child.userData.type ==="sol"){
+                            child.material = material;
+
+                        }
+                        else{
                         child.material = material2;
                             const outlineMesh = new THREE.Mesh(child.geometry, outlineMaterial2);
                             outlineMesh.position.copy(child.position);
@@ -251,9 +276,25 @@ const customLayer = {
         // Écouter le zoom pour ajuster l'épaisseur
         this.map.on('zoom', () => {
             const zoom = map.getZoom();
-            const newThickness = 0.01 + (zoom - 10) * 0.005; // Ajustez selon vos besoins
-            outlineMaterial.uniforms.outlineThickness.value = Math.max(0.01, newThickness); // Limite minimale
-            outlineMaterial2.uniforms.outlineThickness.value = Math.max(0.01, newThickness);
+            const oldThickness = 0.01 + (zoom - 10) * 0.005; // Ajustez selon vos besoins
+            
+            // Définitions des valeurs min et max pour l'épaisseur
+            const minThickness = mapObject.outlineMin; // Définie par l'utilisateur
+            const maxThickness = mapObject.outlineMax; // Définie par l'utilisateur
+        
+            // Calcul de l'épaisseur : plus on s'éloigne de 0, plus on tend vers maxThickness
+            const newThickness = minThickness + (maxThickness - minThickness) * (zoom / 25);
+        
+            console.log(`Zoom: ${zoom}, Thickness: ${newThickness}`);
+        
+            // Mise à jour des uniformes
+            outlineMaterial.uniforms.outlineThickness.value = maxThickness;
+        
+            console.log(mapObject)
+            console.log(newThickness)
+            outlineMaterial.uniforms.outlineThickness.value = newThickness;
+
+            outlineMaterial2.uniforms.outlineThickness.value = Math.max(0.01, oldThickness);
             map.triggerRepaint(); // Repeindre la scène
         });
     },
