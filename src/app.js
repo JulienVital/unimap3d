@@ -193,6 +193,7 @@ const customLayer = {
             face2: "#c2ffdf", // Couleur initiale des arêtes en hexadécimal
         };
         const material = new THREE.MeshToonMaterial({color : guiParams.face});
+        material.side = THREE.DoubleSide
         const material2 = new THREE.MeshToonMaterial({color : guiParams.face2});
         
         guiBatiment.addColor(guiParams, "edgeColor").name("Bordure").onChange((value) => {
