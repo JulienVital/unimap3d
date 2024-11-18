@@ -13,9 +13,9 @@ const mapObject =  {
     pitch : 75,
     bearing: 44,
     outLine : "#37a136",
-    outlineSize: 0.3,
-    outlineMin: 0.3,
-    outlineMax: 0.3 ,
+    outlineSize: 0.14,
+    outlineMin: 0.14,
+    outlineMax: 0.14 ,
 }
 const map = new maplibregl.Map({
     style: `https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=HSEn1GJ1lpRklVKZ4CyJ`,
@@ -155,6 +155,7 @@ const outlineMaterial = new THREE.ShaderMaterial({
     },
     side: THREE.BackSide,
 });
+
 const color = new THREE.Color(mapObject.outLine) 
 
 const outlineMaterial2 = new THREE.ShaderMaterial({
@@ -227,7 +228,6 @@ const customLayer = {
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
                         // Créer un mesh de contour
-                        console.log(child)
                         
                         if(child.userData.type ==="batiment"){
                         child.material = material;
@@ -285,13 +285,10 @@ const customLayer = {
             // Calcul de l'épaisseur : plus on s'éloigne de 0, plus on tend vers maxThickness
             const newThickness = minThickness + (maxThickness - minThickness) * (zoom / 25);
         
-            console.log(`Zoom: ${zoom}, Thickness: ${newThickness}`);
         
             // Mise à jour des uniformes
             outlineMaterial.uniforms.outlineThickness.value = maxThickness;
         
-            console.log(mapObject)
-            console.log(newThickness)
             outlineMaterial.uniforms.outlineThickness.value = newThickness;
 
             outlineMaterial2.uniforms.outlineThickness.value = Math.max(0.01, oldThickness);
