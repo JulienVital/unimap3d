@@ -1,24 +1,18 @@
 import maplibregl from 'maplibre-gl';
 import * as dat from "lil-gui";
-import outlineVertexShader from "./shaders/outline/vertex.glsl";
-import outlineFragmentShader from "./shaders/outline/fragment.glsl";
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { zoneCoordinates } from './zone';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-const MAPTILER_KEY = 'HSEn1GJ1lpRklVKZ4CyJ';
+import { MAPTILER_KEY, mapObject, mapStyle, modelOrigin, modelAltitude, modelRotate } from './map-config.js';
+import { guiParams, outlineMaterial, outlineMaterial2, materials } from './three-config.js';
+import Stats from 'stats.js'
+const stats = new Stats()
+stats.showPanel(0) // 0: fps, 1: ms, 2: mb, 3+: custom
+document.body.appendChild(stats.dom)
 
-const mapObject =  {
-    zoom : 19,
-    pitch : 75,
-    bearing: 44,
-    outLine : "#37a136",
-    outlineSize: 0.14,
-    outlineMin: 0.14,
-    outlineMax: 0.14 ,
-}
 const map = new maplibregl.Map({
-    style: `https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=HSEn1GJ1lpRklVKZ4CyJ`,
+    style: mapStyle,
     center: [-0.361538, 49.191356],
     zoom: mapObject.zoom,
     container: 'map',
@@ -26,7 +20,7 @@ const map = new maplibregl.Map({
     minZoom: 5,
     maxPitch: 85,
     bearing: mapObject.bearing,
-    pitch:mapObject.pitch,
+    pitch: mapObject.pitch,
 });
 const gui = new dat.GUI();
 const guiMap = gui.addFolder( 'Carte' );
@@ -94,7 +88,6 @@ map.on('load', () => {
         },
         maxzoom: 15, 
         minzoom: 12, 
-                 // La couche sera visible uniquement à partir du niveau de zoom 12
     });
 
     // Ajouter une couche "line" pour dessiner le contour de la zone
@@ -144,37 +137,29 @@ map.on('load', () => {
     });
     map.addLayer(customLayer)
 });
-
-const outlineMaterial = new THREE.ShaderMaterial({
-    vertexShader: outlineVertexShader,
-    fragmentShader: outlineFragmentShader,
-    uniforms: {
-        lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
-        color: { value: new THREE.Color("black") },
-        outlineThickness: { value: mapObject.outlineSize }, // Valeur initiale
-    },
-    side: THREE.BackSide,
-});
-
-const color = new THREE.Color(mapObject.outLine) 
-
-const outlineMaterial2 = new THREE.ShaderMaterial({
-    vertexShader: outlineVertexShader,
-    fragmentShader: outlineFragmentShader,
-    uniforms: {
-        lightDirection: { value: new THREE.Vector3(1, 1, 1).normalize() },
-        color: { value: color },
-        outlineThickness: { value: 0.03 }, // Valeur initiale
-    },
-    side: THREE.BackSide,
-});
+const material = materials.building;
+const material2 = materials.tree;
+const edgesMaterial = materials.edges;
 
 const customLayer = {
     id: '3d-model',
     type: 'custom',
     renderingMode: '3d',
-    maxzoom: 17,
     onAdd(map, gl) {
+        this.zoomHandler = () => {
+            const currentZoom = map.getZoom();
+            
+            // Masquer ou afficher la scène en fonction du zoom
+            if (currentZoom < 15) {
+                this.scene.visible = false;
+                map.triggerRepaint();
+            } else {
+                this.scene.visible = true;
+                map.triggerRepaint();
+            }
+        };
+
+        map.on('zoom', this.zoomHandler);
         this.camera = new THREE.Camera();
         this.scene = new THREE.Scene();
 
@@ -182,7 +167,8 @@ const customLayer = {
         const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
         directionalLight.position.set(5, 5, 5);
         this.scene.add(directionalLight);
-
+        gui.add(directionalLight.shadow, 'normalBias').min(- 0.05).max(0.05).step(0.001)
+        gui.add(directionalLight.shadow, 'bias').min(- 0.05).max(0.05).step(0.001)
         // Matériau de contour
       
 
@@ -192,9 +178,7 @@ const customLayer = {
             face: "#FcFFC1", // Couleur initiale des arêtes en hexadécimal
             face2: "#c2ffdf", // Couleur initiale des arêtes en hexadécimal
         };
-        const material = new THREE.MeshToonMaterial({color : guiParams.face});
-        material.side = THREE.DoubleSide
-        const material2 = new THREE.MeshToonMaterial({color : guiParams.face2});
+
         
         guiBatiment.addColor(guiParams, "edgeColor").name("Bordure").onChange((value) => {
             edgesMaterial.color.set(value); // Mettre à jour la couleur du matériau
@@ -202,6 +186,13 @@ const customLayer = {
         guiBatiment.addColor(guiParams, "face").name("Batiment").onChange((value) => {
             material.color.set(value); // Mettre à jour la couleur du matériau
         });
+        guiTree.addColor(guiParams, "face2").name("Arbre").onChange((value) => {
+            material2.color.set(value); // Mettre à jour la couleur du matériau
+        });
+        guiTree.addColor(mapObject, "outLine").name("Bordure").onChange((value) => {
+            outlineMaterial2.uniforms.color.value.set(value);
+        });
+        
         guiBatiment.add(mapObject, "outlineMax").min(0).max(1).name("Bordure max").step(0.01).onChange(
             (value)=>{
                             const minThickness = mapObject.outlineMin; // Définie par l'utilisateur
@@ -213,18 +204,12 @@ const customLayer = {
             }
          )
 
-        guiTree.addColor(guiParams, "face2").name("Arbre").onChange((value) => {
-            material2.color.set(value); // Mettre à jour la couleur du matériau
-        });
-        guiTree.addColor(mapObject, "outLine").name("Bordure").onChange((value) => {
-            outlineMaterial2.uniforms.color.value.set(value);
-        });
-        const edgesMaterial = new THREE.LineBasicMaterial({ color: guiParams.edgeColor }); // Noir par défaut
+
 
         // Charger le modèle GLTF
         const loader = new GLTFLoader();
         loader.load(
-            'test.glb',
+            'univExtrude.glb',
             (gltf) => {
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
@@ -297,6 +282,8 @@ const customLayer = {
         });
     },
     render(gl, matrix) {
+        stats.begin()
+
         const rotationX = new THREE.Matrix4().makeRotationAxis(
             new THREE.Vector3(1, 0, 0),
             modelTransform.rotateX
@@ -332,20 +319,17 @@ const customLayer = {
         this.renderer.resetState();
         this.renderer.render(this.scene, this.camera);
         this.map.triggerRepaint();
+        stats.end()
+
     }
 };
 
-
-const modelOrigin = [-0.364019, 49.192190]
-const modelAltitude = 0;
-const modelRotate = [Math.PI / 2, 0, 0];
 
 const modelAsMercatorCoordinate = maplibregl.MercatorCoordinate.fromLngLat(
     modelOrigin,
     modelAltitude
 );
 
-// transformation parameters to position, rotate and scale the 3D model onto the map
 const modelTransform = {
     translateX: modelAsMercatorCoordinate.x,
     translateY: modelAsMercatorCoordinate.y,
@@ -353,9 +337,6 @@ const modelTransform = {
     rotateX: modelRotate[0],
     rotateY: modelRotate[1],
     rotateZ: modelRotate[2],
-    /* Since our 3D model is in real world meters, a scale transform needs to be
-    * applied since the CustomLayerInterface expects units in MercatorCoordinates.
-    */
     scale: modelAsMercatorCoordinate.meterInMercatorCoordinateUnits()
 };
 
