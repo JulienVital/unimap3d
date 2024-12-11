@@ -12,6 +12,6 @@ export const mapObject = {
 
 export const mapStyle = `https://api.maptiler.com/maps/b0dcfcd5-55b3-4040-8d0d-a369aa70a131/style.json?key=${MAPTILER_KEY}`;
 
-export const modelOrigin = [-0.364019, 49.192190];
+export const modelOrigin = [-0.364056, 49.192188];
 export const modelAltitude = 0;
 export const modelRotate = [Math.PI / 2, 0, 0];

@@ -165,10 +165,9 @@ const customLayer = {
 
         // Lumière
         const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
-        directionalLight.position.set(5, 5, 5);
+        // directionalLight.position.set(5, 5, 5);
         this.scene.add(directionalLight);
-        gui.add(directionalLight.shadow, 'normalBias').min(- 0.05).max(0.05).step(0.001)
-        gui.add(directionalLight.shadow, 'bias').min(- 0.05).max(0.05).step(0.001)
+
         // Matériau de contour
       
 
@@ -214,7 +213,6 @@ const customLayer = {
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
                         // Créer un mesh de contour
-                        
                         if(child.userData.type ==="batiment"){
                         child.material = material;
                             const outlineMesh = new THREE.Mesh(child.geometry, outlineMaterial);
@@ -231,18 +229,17 @@ const customLayer = {
                             edgesMesh.scale.copy(child.scale);
                             child.parent.add(edgesMesh);
                         }
-                        else if (child.userData.type ==="sol"){
-                            child.material = material;
-
-                        }
-                        else{
-                        child.material = material2;
+                        if(child.userData.type ==="tree"){                            child.material = material;
+                            child.material = material2;
                             const outlineMesh = new THREE.Mesh(child.geometry, outlineMaterial2);
                             outlineMesh.position.copy(child.position);
                             outlineMesh.rotation.copy(child.rotation);
                             outlineMesh.scale.copy(child.scale);
                             outlineMesh.scale.multiplyScalar(1.0); // Ajustement initial
                             child.parent.add(outlineMesh);
+                        }
+                        else{
+
                         }
                     }
                 });
